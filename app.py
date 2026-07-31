@@ -49,7 +49,7 @@ c1, c2 = st.columns([1.5, 1])
 with c1:
     st.image(
         "beam_schematic.png",
-        caption="Schematic of Damage Locations along Beam Span",
+        caption="Schematic of a Continuous Beam",
         use_container_width=True,
     )
 
@@ -144,20 +144,18 @@ st.markdown("#### Damage Measurements")
 
 col1, col2, col3 = st.columns(3)
 with col2:
-    st.image("girder_damage.png", caption="Schematic Reference for Damage Measurements", width=300)
+    st.image("girder_damage.jpeg", caption="Schematic Reference for Damage Measurements", width=300)
 
 Dx = st.number_input(r"Horizontal Damage Measurement $D_x$ (in.)", value=0.0, step=0.5, format="%.2f")
 Dy = st.number_input(r"Vertical Damage Measurement $D_y$ (in.)", value=0.0, step=0.5, format="%.2f")
-# DLR = st.number_input(r"Damage Location Ratio to Span $DLR$ (dimensionless)", value=0.0, step=0.25, format="%.2f")
-# DLR = st.selectbox(
-#     r"Damage Location Ratio to Span $DLR$ (dimensionless)",
-#     options=[None, 0.25, 0.50, 0.75, 0.85],
-#     index=0,
-#     format_func=lambda x: "Select..." if x is None else f"{x:.2f}",
-# )
-# DLR = st.radio(r"Damage Location Ratio to Span $DLR$ (dimensionless)", [0.25, 0.50, 0.75, 0.85], horizontal=True)
 
-# Damage location input
+## Damage location input
+span_type = st.radio(
+    "Damaged span type:",
+    ["End Span", "Interior Span"],
+    horizontal=True,
+)
+
 damage_location = st.number_input(
     "Damage Location from support (in.)",
     min_value=0.0,
@@ -165,20 +163,47 @@ damage_location = st.number_input(
     step=50.0,
 )
 
-reference_support = st.radio(
-    "Measured from which support:",
-    ["Exterior Support", "Interior Support"],
-    horizontal=True,
-)
+DLR = None
 
-# Compute DLR
-if L > 0:
-    if reference_support == "Exterior Support":
-        DLR = damage_location / L
-    else:  # Interior Support
-        DLR = 1.0 - (damage_location / L)
+if L > 0 and L <= 900:
+    if damage_location > L:
+        st.error(f"Damage location cannot exceed span length.")
+        st.stop()
+
+    elif damage_location == 0:
+        st.error(f"Damage location cannot be zero.")
+        st.stop()
+
+    else:
+        x_over_L = damage_location / L
+
+        ## End Span
+        if span_type == "End Span":
+
+            reference_support = st.radio(
+                "Measured from which support:",
+                ["End Support", "Interior Support"],
+                horizontal=True,
+            )
+
+            if reference_support == "End Support":
+                DLR = x_over_L
+            else:  # Interior Support
+                DLR = 1.0 - x_over_L
+
+        ## Interior Span
+        else:
+            DLR = max(x_over_L, 1.0 - x_over_L)
 
     st.write(f"Computed Damage Location Ratio (DLR) = {DLR:.2f}")
+
+elif L > 900:
+    st.error("Span length exceeds the maximum limit of 900 in. for this tool.")
+    st.stop()
+
+else:
+    st.error("Please enter a valid span length.")
+    st.stop()
 
 # ----------------------------
 # Function to validate all inputs have been provided
@@ -191,7 +216,7 @@ def validate_inputs(values, mins):
             continue
 
         min_allowed = mins.get(label, 0.0)  # default: require > 0
-        if float(v) <= min_allowed:            # inclusive min allowed
+        if float(v) < min_allowed:            
             missing.append(label)
 
     return missing
@@ -235,8 +260,8 @@ if st.button("Run Prediction"):
         r"Web Thickness $t_w$": 0.0,
         r"Web Height $h_w$": 0.0,
         r"Damage Location Ratio $DLR$": 0.0,   
-        r"Horizontal Damage $D_x$": 1.0,       
-        r"Vertical Damage $D_y$": 1.0,        
+        r"Horizontal Damage $D_x$": 0.1,       
+        r"Vertical Damage $D_y$": 0.1,        
     }
 
     missing = validate_inputs(required, mins)
@@ -313,14 +338,27 @@ if st.button("Run Prediction"):
     C = 24 * Fy * Zx / L # full capacity in kips
     residual_ratio = C_R / C
 
+    # Verify that the predicted residual capacity is physically admissible
+    if residual_ratio > 1.0:
+        st.error(
+            """
+            **Prediction could not be completed.**
+
+            The machine learning model did not yield a physically meaningful capacity.
+            This may occur when the specified bridge properties or damage scenario
+            fall outside the range represented in the machine learning training data 
+            or due to normal prediction error.
+
+            Please verify the input values and ensure they are within the
+            recommended training limits.
+            """
+        )
+        st.stop()
+
     # ----------------------------
     # AASHTOWare Inputs
     # ----------------------------
-    a = L_ft * DLR # ft
-    Mp = (Fy*Zx) / 12 # kips-ft
-    
 
-    M_red = a * ((-Mp / L_ft) + (w_R * L_ft/2) - (w_R * a/2))
     penalty_percent = (1 - residual_ratio) * 100
 
     # -----------------------------
@@ -351,7 +389,7 @@ if st.button("Run Prediction"):
 
         st.latex(fr"w_R = \frac{{C_R}}{{2L}} = \frac{{{C_R:.1f}}}{{2 * {L_ft:.1f}}} = {w_R:.2f} \,\, \text{{kips/ft}}")
         st.write("Where")
-        st.write(r"$C_R$: Residual Force from AI Model (kips)")
+        st.write(r"$C_R$: Residual Capacity from AI Model (kips)")
         st.write(r"$L$: Span Length (ft)")
 
         st.divider()
@@ -361,8 +399,9 @@ if st.button("Run Prediction"):
         if penalty_percent > 0:
             st.latex(fr"\text{{Penalty (\%)}} = (1 - \frac{{{C_R:.1f}}}{{{C:.1f}}}) \times 100 = {penalty_percent:.1f} \%")
         st.write("Where")
-        st.write(r"$C_R$: Residual Force from AI Model (kips)")
+        st.write(r"$C_R$: Residual Capacity from AI Model (kips)")
         st.write(fr"$C$: Undamaged Capacity (kips)  $\therefore$  $\frac{{24 \, Fy \, Zx}}{{L}} = \frac{{24 * 36 * {Zx:.0f}}}{{{L:.0f}}} = {C:.1f} \,\, \text{{kips}}$")
+        st.write("computed from plastic collapse mechanism corresponding to two-span girder with uniform load.")
 
     # ----------------------------
     # LIME Explainer Plots
