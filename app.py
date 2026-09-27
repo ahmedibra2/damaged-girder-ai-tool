@@ -336,7 +336,9 @@ if st.button("Run Prediction"):
     # Compute Residual Capacity Ratio (two-span 36 ksi girder)
     Fy = 36 # ksi
     C = 24 * Fy * Zx / L # full capacity in kips
+    w = C / (2*L_ft) # kips/ft
     residual_ratio = C_R / C
+    delta_w = w - w_R
 
     # Verify that the predicted residual capacity is physically admissible
     if residual_ratio > 1.0:
@@ -373,11 +375,13 @@ if st.button("Run Prediction"):
 
     with c1:
         with st.container(border=True):
-            penalty_display = f"{penalty_percent:.1f} %" if penalty_percent > 0 else "N/A"
-            st.metric("Additional Self-load %", penalty_display)
+            st.metric("Equivalent Damage Load", f"{delta_w:.2f} kips/ft")
+
+            
     with c2:
         with st.container(border=True):
-            st.metric("Girder uniform load capacity", f"{w_R:.2f} kips/ft")
+            penalty_display = f"{penalty_percent:.1f} %" if penalty_percent > 0 else "N/A"
+            st.metric("Damage Penalty %", penalty_display)
 
     # Intermediate calculations
     with st.expander("Show intermediate steps"):
@@ -385,16 +389,8 @@ if st.button("Run Prediction"):
 
         st.write(fr"Yield Stress $F_y = {Fy} \,\, \text{{ksi}}$")
         st.write(fr"Plastic Section Modulus $Z_x = {Zx:.0f} \,\, \text{{in}}^4$")
-        st.write(f"**Equivalent Reduced Uniform Load Calculation:**")
 
-        st.latex(fr"w_R = \frac{{C_R}}{{2L}} = \frac{{{C_R:.1f}}}{{2 * {L_ft:.1f}}} = {w_R:.2f} \,\, \text{{kips/ft}}")
-        st.write("Where")
-        st.write(r"$C_R$: Residual Capacity from AI Model (kips)")
-        st.write(r"$L$: Span Length (ft)")
-
-        st.divider()
-
-        st.write(f"**Penalty Percentage Calculation:**")
+        st.write(f"**Damage Penalty Calculation:**")
         st.latex(r"\text{Penalty (\%)} = (1 - \frac{C_R}{C}) \times 100")
         if penalty_percent > 0:
             st.latex(fr"\text{{Penalty (\%)}} = (1 - \frac{{{C_R:.1f}}}{{{C:.1f}}}) \times 100 = {penalty_percent:.1f} \%")
@@ -402,6 +398,17 @@ if st.button("Run Prediction"):
         st.write(r"$C_R$: Residual Capacity from AI Model (kips)")
         st.write(fr"$C$: Undamaged Capacity (kips)  $\therefore$  $\frac{{24 \, Fy \, Zx}}{{L}} = \frac{{24 * 36 * {Zx:.0f}}}{{{L:.0f}}} = {C:.1f} \,\, \text{{kips}}$")
         st.write("computed from plastic collapse mechanism corresponding to two-span girder with uniform load.")
+
+        st.divider()
+
+        st.write(f"**Equivalent Damage Load Calculation:**")
+
+        st.latex(fr"\Delta w = \frac{{C - C_R}}{{2L}} = \frac{{{C:.1f} - {C_R:.1f}}}{{2 * {L_ft:.1f}}} = {delta_w:.2f} \,\, \text{{kips/ft}}")
+        st.write("Where")
+        st.write(r"$C$: Undamaged Capacity (kips)")
+        st.write(r"$C_R$: Residual Capacity from AI Model (kips)")
+        st.write(r"$L$: Span Length (ft)")
+
 
     # ----------------------------
     # LIME Explainer Plots
