@@ -1,42 +1,18 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import xgboost as xgb
 import joblib
-import matplotlib.pyplot as plt
-from lime.lime_tabular import LimeTabularExplainer
 
-# ----------------------------
-# Load model and scaler
-# ----------------------------
-model = xgb.XGBRegressor()
-model.load_model("xgb_model.json")
-
+# # ----------------------------
+# # Load model and scaler
+# # ----------------------------
+gpr = joblib.load("gpr_model.pkl")
 scaler = joblib.load("scaler.pkl")
 
-# ----------------------------
-# Streamlit page configuration
-# ----------------------------
+# # ----------------------------
+# # Streamlit page configuration
+# # ----------------------------
 st.set_page_config(page_title="Damaged Girder AI Diagnostic Tool", layout="wide")
-
-# ----------------------------
-# Load LIME explainer 
-# ----------------------------
-@st.cache_resource
-def load_lime_explainer_and_names():
-    assets = joblib.load("lime_assets.pkl")
-    X_train_raw_local = assets["X_train_raw"]
-    feature_names_lime_local = assets["feature_names_lime"]
-    cfg = assets.get("lime_config", {})
-
-    lime_explainer = LimeTabularExplainer(
-        training_data=X_train_raw_local,
-        feature_names=feature_names_lime_local,
-        **cfg
-    )
-    return lime_explainer, feature_names_lime_local
-
-lime_explainer, feature_names_lime = load_lime_explainer_and_names() 
 
 # ----------------------------
 # Streamlit UI
@@ -195,7 +171,7 @@ if L > 0 and L <= 900:
         else:
             DLR = max(x_over_L, 1.0 - x_over_L)
 
-    st.write(f"Computed Damage Location Ratio (DLR) = {DLR:.2f}")
+        st.write(f"Computed Damage Location Ratio (DLR) = {DLR:.2f}")
 
 elif L > 900:
     st.error("Span length exceeds the maximum limit of 900 in. for this tool.")
@@ -329,7 +305,8 @@ if st.button("Run Prediction"):
     X_scaled = scaler.transform(X_raw)
 
     # Run prediction
-    C_R = model.predict(X_scaled)[0]
+    C_R = gpr.predict(X_scaled)[0]  # kips    
+    #-------------------------------------------------------------------------------
     L_ft = L / 12 # ft
     w_R = C_R / (2*L_ft) # kips/ft
 
@@ -408,34 +385,6 @@ if st.button("Run Prediction"):
         st.write(r"$C$: Undamaged Capacity (kips)")
         st.write(r"$C_R$: Residual Capacity from AI Model (kips)")
         st.write(r"$L$: Span Length (ft)")
-
-
-    # ----------------------------
-    # LIME Explainer Plots
-    # ----------------------------
-    st.divider()
-    left, right = st.columns([0.9, 1.5])
-
-    def predict_fn(X: np.ndarray) -> np.ndarray:
-        X_scaled_local = scaler.transform(X)
-        return model.predict(X_scaled_local)
-
-    x_instance = X_raw.flatten()
-
-    with st.spinner("Computing parameter explanation..."):
-        exp_lime = lime_explainer.explain_instance(
-            data_row=x_instance,
-            predict_fn=predict_fn,
-            num_features=13
-        )
-
-    with left:
-        st.markdown("#### **Parameters Influence on Predicted Capacity**")
-        st.markdown("**Note:** Red contributions indicate parameters that decrease the predicted capacity.")
-        fig_lime = exp_lime.as_pyplot_figure()
-        fig_lime.tight_layout()
-        st.pyplot(fig_lime, use_container_width=True)
-        plt.close(fig_lime)
 
 #----------------------------
 # Disclaimer
